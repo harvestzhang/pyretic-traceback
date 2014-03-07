@@ -97,21 +97,39 @@ class topo_store(DynamicPolicy):
 
 def test_back_policy(policy):
   print
-  print '*********************** Policy *************************'
+  print '----------------------------------------------------------------------'
+  print
+  print '******************* Policy *********************'
   print
   print policy
   print
-  print '********************* Back Policy **********************'
+  simplified = simplify_tb(policy)
+  print '************** Simplified Policy ***************'
   print
-  print back_policy(policy)
+  print simplified
   print
-  print '--------------------------------------------------------'
+  back = back_policy(simplified)
+  print '***************** Back Policy ******************'
+  print
+  print back
+  print
+  simplified_back = simplify_tb(back)
+  print '*********** Simplified Back Policy *************'
+  print
+  print simplified_back
   print
 
 def main():
-  # policy = if_(match(switch = 3), modify(switch = 10))
-  policy = match(switch = 3) >> modify(switch = 10)
-  policy = topo_store()
+  print
+  print "############### Sequential policy simplification and traceback"
+  policy = match(dstmac = 1) >> match(switch = 4) >> match(switch = 5)
   test_back_policy(policy)
-  # sys.exit(0)
-  return policy
+  policy = match(switch = 3) >> modify(switch = 10)
+  test_back_policy(policy)
+  policy = if_(match(switch = 3), modify(switch = 10))
+  test_back_policy(policy)
+  sys.exit(0)
+
+  # Below is for testing topology policies
+  # policy = topo_store()
+  # return policy

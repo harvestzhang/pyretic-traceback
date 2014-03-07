@@ -28,6 +28,7 @@
 # LICENSE file distributed with this work for specific language governing      #
 # permissions and limitations under the License.                               #
 ################################################################################
+import ipdb # TEMPORARY
 
 # This module is designed for import *.
 import functools
@@ -473,12 +474,12 @@ class sum_modify(Policy):
         """
         raise RuntimeError("Can't compile a sum_modify.")
 
-    def restrict(self, field, policy):
-        self.fields[field] = self.fields[field] >> policy # TODO
-        # Simplify
+    def restrict(self, field, policy): 
+        self.fields[field] = simplify_tb(self.fields[field] >> policy)
 
     def to_modify(self):
         for field in self.fields: # TODO
+            pass
 
     def __repr__(self):
         strform = "sum_modify:"
@@ -1325,10 +1326,6 @@ def queries_in_eval(acc, policy):
                 break
     return acc
 
-###############################################################################
-# Simplifies a given policy
-def simplify_policy(policy):
-    
 
 ###############################################################################
 # Classifiers
@@ -1587,3 +1584,87 @@ class Classifier(object):
             if pkts is not None:
                 return pkts
         raise TypeError('Classifier is not total.')
+
+
+###############################################################################
+# Simplifies a given policy for traceback.
+# This means that queries, Controllers, etc. will be treated as drops! Don't
+# use this as is to simplify policies for "normal" use (e.g. compilation) or
+# all sorts of things will be broken.
+###############################################################################
+def simplify_tb(policy):
+
+    # Controller or Query is really just drop for traceback.
+    if policy is Controller or isinstance(policy, Query):
+        return drop
+
+    elif isinstance(policy, sequential):
+        # If there was a drop/Query/Controller in there, that's definitely a drop.
+        if drop in policy.policies or any(p is Controller or isinstance(p, Query) for p in policy.policies):
+          return drop
+        
+        # Simplify each term, ignoring all identities.
+        policies = [simplify_tb(p) for p in policy.policies if p is not identity]
+        
+        # Remove parens on any nested sequentials, since a >> (b >> c) = a >> b >> c
+        flat_policies = []
+        for i in range(len(policies)):
+            if isinstance(policies[i], sequential):
+                flat_policies.extend(policies[i].policies)
+            else:
+                flat_policies.append(policies[i])
+        policies = flat_policies
+        
+        # Iteratively simplify each pair until an iteration doesn't make a change; then return
+        i = 0
+        while i < len(policies) - 1:
+            simplified = simplify_seq_pair(policies[i:i+2])
+            if simplified is None:
+                i += 1
+            elif simplified == []: # Policies combined to make a drop.
+                return drop
+            else:
+                del policies[i:i+2]
+                policies[i:i] = simplified
+                if i is not 0:
+                    i -= 1
+        return sequential(policies)
+
+    elif isinstance(policy, parallel):
+        return policy #TODO
+
+    elif isinstance(policy, negate):
+        return policy #TODO
+
+      # Apply back policy algorithm to the underlying policy of Derived policies
+    elif isinstance(policy, DerivedPolicy):
+        return simplify_tb(policy.policy)
+
+    # We can't simplify drop / identity / match / modify
+    else:
+        return policy
+
+# Helper function for simplify_tb that simplifies a sequential pair of policies.
+# 'pair' is a list containing two policies.
+# Returns a list of policies if simplifiable, and None if not simplifiable.
+# In the case that it simplifies to drop, we return an empty list [].
+def simplify_seq_pair(pair):
+
+    if isinstance(pair[0], match):
+        # Two matches in a row. Can either merge or simplify to drop.
+        if isinstance(pair[1], match):
+            dup_keys = list(set(pair[0].map.keys()) & set(pair[1].map.keys()))
+            for key in dup_keys:
+                if pair[0].map[key] != pair[1].map[key]:
+                    return []
+            pair[0].map = pair[0].map.update(pair[1].map)
+            return [pair[0]]
+        else:
+            return None
+
+    elif isinstance(pair[0], sum_modify):
+        return None
+        if isinstance(pair[1], match):
+            return None
+    else:
+        return None
