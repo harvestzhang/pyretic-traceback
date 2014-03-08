@@ -477,10 +477,6 @@ class sum_modify(Policy):
     def restrict(self, field, policy): 
         self.fields[field] = simplify_tb(self.fields[field] >> policy)
 
-    def to_modify(self):
-        for field in self.fields: # TODO
-            pass
-
     def __repr__(self):
         strform = "sum_modify:"
         for field in self.fields:
@@ -1614,20 +1610,23 @@ def simplify_tb(policy):
             else:
                 flat_policies.append(policies[i])
         policies = flat_policies
+
+        # If there's only one policy after doing all that, just return that
+        if len(policies) is 1:
+            return policies[0]
         
-        # Iteratively simplify each pair until an iteration doesn't make a change; then return
+        # Iteratively simplify each pair until the end; backtrack and consolidate after each change.
         i = 0
         while i < len(policies) - 1:
             simplified = simplify_seq_pair(policies[i:i+2])
-            if simplified is None:
-                i += 1
-            elif simplified == []: # Policies combined to make a drop.
+            if simplified is drop:
                 return drop
+            elif simplified == sequential(policies[i:i+2]):
+                i += 1
             else:
                 del policies[i:i+2]
-                policies[i:i] = simplified
-                if i is not 0:
-                    i -= 1
+                policies.insert(i, simplified)
+                i = 0
         return sequential(policies)
 
     elif isinstance(policy, parallel):
@@ -1645,9 +1644,7 @@ def simplify_tb(policy):
         return policy
 
 # Helper function for simplify_tb that simplifies a sequential pair of policies.
-# 'pair' is a list containing two policies.
-# Returns a list of policies if simplifiable, and None if not simplifiable.
-# In the case that it simplifies to drop, we return an empty list [].
+# 'pair' is a list containing two policies. Returns the (maybe simplified) policy.
 def simplify_seq_pair(pair):
 
     if isinstance(pair[0], match):
@@ -1656,15 +1653,83 @@ def simplify_seq_pair(pair):
             dup_keys = list(set(pair[0].map.keys()) & set(pair[1].map.keys()))
             for key in dup_keys:
                 if pair[0].map[key] != pair[1].map[key]:
-                    return []
+                    return drop
             pair[0].map = pair[0].map.update(pair[1].map)
-            return [pair[0]]
+            return pair[0]
         else:
-            return None
+            return sequential(pair)
+
+    elif isinstance(pair[0], modify):
+        # Two modifys in a row; always merge.
+        if isinstance(pair[1], modify):
+            pair[0].map = pair[0].map.update(pair[1].map)
+            return pair[0]
+        # modify >> match. Simplifies to drop if any fields match with different values.
+        elif isinstance(pair[1], match):
+            return sequential(pair) # TODO
+        else:
+            return sequential(pair)
 
     elif isinstance(pair[0], sum_modify):
-        return None
+        # Sum modify followed by match. Try to resolve some ambiguity.
         if isinstance(pair[1], match):
-            return None
+            match_keys = list(set(pair[0].fields.keys()) & set(pair[1].map.keys()))
+            # Can't really simplify anything if all keys are different.
+            if len(match_keys) is 0:
+                return sequential(pair)
+            for key in match_keys:
+                pair[0].restrict(key, match({key:pair[1].map[key]}))
+                # If there are any resultant drops, the whole sequential policy is a drop.
+                if pair[0].fields[key] is drop:
+                    return drop
+                pair[1].map = pair[1].map.remove([key]) # Remove the entry from the match
+            simplified = sum_to_modify(pair[0])
+            # if anything left in the match, append it to the simplified sum_modify
+            if len(pair[1].map) > 0:
+                simplified = simplified >> pair[1]
+            return simplified
+        # Sum modify followed by modify. Kill any fields in sum_modify shadowed by modify.
+        if isinstance(pair[1], modify):
+            shadowed_keys = list(set(pair[0].fields.keys()) & set(pair[1].map.keys()))
+            if len(shadowed_keys) is 0:
+                return sequential(pair)
+            for key in shadowed_keys:
+                pair[0].fields.pop(key)
+            if len(pair[0].fields) is 0:
+                return pair[1]
+            else:
+                return pair[0] >> pair[1]
+        else:
+            return sequential(pair)
+    
     else:
-        return None
+        return sequential(pair)
+
+# Helper function for taking a sum_modify policy sm and returning the sequential
+# composition consisting of any modifies that can be pulled out followed by the
+# remainder of the sum_modify. We pull out any modifies whose field policies eval
+# to a "few" possibilities (e.g. match with no negates after simplification)
+def sum_to_modify(sm):
+    mod = None
+    for key in sm.fields.copy():
+        policy = sm.fields[key]
+        if policy is identity:
+            continue
+        # Simplify if match
+        elif isinstance(policy, match):
+            if mod:
+                mod.map.update(policy.map)
+            else:
+                mod = modify(policy.map)
+            sm.fields.pop(key)
+        # Should never see drop.
+        elif policy is drop:
+            raise RuntimeError("Something went wrong; sum_modify should never have a drop for a field.")
+        # TODO handle parallel, other cases
+    if mod:
+        if len(sm.fields) is 0:
+            return mod
+        else:
+            return mod >> sm
+    else:
+        return sm
