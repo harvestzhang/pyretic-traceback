@@ -1,6 +1,8 @@
 from pyretic.lib.corelib import *
 from pyretic.lib.std import *
 
+from policy_traceback import *
+
 from collections import deque
 import ipdb
 
@@ -49,7 +51,7 @@ def ingress_tagging(policy, topo, packet):
 # ------------------------------------------------------------------------------
 # 
 # ------------------------------------------------------------------------------
-def policy_inversion(policy, topo, packet):
+def backstep(policy, topo, packet):
   rules = policy.compile().rules
   start_switch = PathSwitch(packet['switch'])
   path_switches = [start_switch]
@@ -107,5 +109,6 @@ class AbstractPacket:
 #
 #
 # ------------------------------------------------------------------------------
-def header_pruning(policy, topo, packet):
-  print 'Header pruning not yet implemented.'
+def policy_inversion(policy, topo, packet):
+  overall_policy = policy >> topo_policy(topo)
+  test_back_policy(overall_policy)

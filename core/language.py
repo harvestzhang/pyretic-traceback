@@ -1630,7 +1630,11 @@ def simplify_tb(policy):
         return sequential(policies)
 
     elif isinstance(policy, parallel):
-        return policy #TODO
+        # Simplify each term, ignoring all identities.
+        policies = [simplify_tb(p) for p in policy.policies]
+        if identity in policies:
+            return identity
+        return parallel(policies)
 
     elif isinstance(policy, negate):
         return policy #TODO
@@ -1648,11 +1652,12 @@ def simplify_tb(policy):
 def simplify_seq_pair(pair):
 
     if isinstance(pair[0], match):
+        
         # Two matches in a row. Can either merge or simplify to drop.
         if isinstance(pair[1], match):
             dup_keys = list(set(pair[0].map.keys()) & set(pair[1].map.keys()))
             for key in dup_keys:
-                if pair[0].map[key] != pair[1].map[key]:
+                if pair[0].map[key] != pair[1].map[key]: # TODO: deal with IP prefixing
                     return drop
             pair[0].map = pair[0].map.update(pair[1].map)
             return pair[0]
@@ -1660,10 +1665,12 @@ def simplify_seq_pair(pair):
             return sequential(pair)
 
     elif isinstance(pair[0], modify):
+        
         # Two modifys in a row; always merge.
         if isinstance(pair[1], modify):
             pair[0].map = pair[0].map.update(pair[1].map)
             return pair[0]
+        
         # modify >> match. Simplifies to drop if any fields match with different values.
         elif isinstance(pair[1], match):
             return sequential(pair) # TODO
@@ -1671,23 +1678,27 @@ def simplify_seq_pair(pair):
             return sequential(pair)
 
     elif isinstance(pair[0], sum_modify):
+        
         # Sum modify followed by match. Try to resolve some ambiguity.
         if isinstance(pair[1], match):
             match_keys = list(set(pair[0].fields.keys()) & set(pair[1].map.keys()))
             # Can't really simplify anything if all keys are different.
             if len(match_keys) is 0:
                 return sequential(pair)
+            # Merge match fields into modify fields and simplify!
+            mcopy = match(pair[1].map) # Copy match first, since otherwise negations get messed up...
             for key in match_keys:
-                pair[0].restrict(key, match({key:pair[1].map[key]}))
+                pair[0].restrict(key, match({key:mcopy.map[key]}))
                 # If there are any resultant drops, the whole sequential policy is a drop.
                 if pair[0].fields[key] is drop:
                     return drop
-                pair[1].map = pair[1].map.remove([key]) # Remove the entry from the match
+                mcopy.map = mcopy.map.remove([key]) # Remove the entry from the match
             simplified = sum_to_modify(pair[0])
             # if anything left in the match, append it to the simplified sum_modify
-            if len(pair[1].map) > 0:
-                simplified = simplified >> pair[1]
+            if len(mcopy.map) > 0:
+                simplified = simplified >> mcopy
             return simplified
+        
         # Sum modify followed by modify. Kill any fields in sum_modify shadowed by modify.
         if isinstance(pair[1], modify):
             shadowed_keys = list(set(pair[0].fields.keys()) & set(pair[1].map.keys()))

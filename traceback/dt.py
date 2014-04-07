@@ -26,15 +26,21 @@ def trace_packet(packet):
   print packet
   print '****************************************************'
 
-  # Print ingress tagging traceback
-  print
-  print '**************** INGRESS TAGGING: ******************'
-  intradomain_traceback.ingress_tagging(policy, topo, packet)
-  print '****************************************************'
+  # # Print ingress tagging traceback
+  # print
+  # print '**************** INGRESS TAGGING: ******************'
+  # intradomain_traceback.ingress_tagging(policy, topo, packet)
+  # print '****************************************************'
+
+  # # Print backstep traceback
+  # print
+  # print '**************** BACKSTEP: *****************'
+  # intradomain_traceback.backstep(policy, topo, packet)
+  # print '****************************************************'  
 
   # Print policy inversion traceback
   print
-  print '**************** PACKET INVERSION: *****************'
+  print '**************** POLICY INVERSION: *****************'
   intradomain_traceback.policy_inversion(policy, topo, packet)
   print '****************************************************'  
 
@@ -102,7 +108,7 @@ class flag(DynamicPolicy):
           continue
         self.switch = int(cmd_params[0])
         self.hostmac = MAC('00:00:00:00:00:{:02x}'.format(int(cmd_params[1]))) # TODO FIX MAC ID
-        m_flagged_switch = ~match(in_switch = None) & match(switch = self.switch, dstmac = self.hostmac)
+        m_flagged_switch = match(switch = self.switch, dstmac = self.hostmac) # use & ~match(in_switch = None) to force tagging only
         q_flagged_packets = packets(limit = 1, group_by = ['srcip'])
         q_flagged_packets.register_callback(trace_packet)
         self.policy = m_flagged_switch >> q_flagged_packets
@@ -143,6 +149,7 @@ def main():
   global flag
 
   flag = flag()
-  policy = tag() >> mac_learner() >> (flag + untag())
+  # policy = tag() >> mac_learner() >> (flag + untag()) Don't need tagging
+  policy = mac_learner() + flag
   print policy
   return policy

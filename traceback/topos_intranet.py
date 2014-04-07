@@ -89,6 +89,31 @@ class Four_Ingress(Topo):
     host = self.addHost('ex6')
     self.addLink(host, s[4])
 
+class Two_Switch(Topo):
+
+  # TOPOLOGY:
+  #
+  #    s1----s2
+  #     |     |
+  #    h1    h2
+  #
+
+  def __init__(self):
+    Topo.__init__(self)
+    
+    # Create switches
+    s1 = self.addSwitch('s1')
+    s2 = self.addSwitch('s2')
+
+    # Link up the switches.
+    self.addLink(s1, s2)
+
+    # Create and hook up hosts.
+    host = self.addHost('h1')
+    self.addLink(host, s1)
+    host = self.addHost('h2')
+    self.addLink(host, s2)
+
 class Three_Switch(Topo):
 
   # TOPOLOGY:
@@ -120,6 +145,7 @@ class Three_Switch(Topo):
     self.addLink(host, s[3])
 
 topos = {
+  'two_switch': Two_Switch,
   'two_ingress': Two_Ingress,
   'four_ingress': Four_Ingress,
   'three_switch': Three_Switch,
