@@ -1098,26 +1098,59 @@ class link(DerivedPolicy):
     """
     Topology link from a source switch and outport to a dest switch and inport
 
-    :param outswitch: the source switch.
-    :type outswitch: int
+    :param srcswitch: the source switch.
+    :type srcswitch: int
     :param outport: the port on the source switch we forward out.
     :type outport: int
-    :param inswitch: the destination switch.
-    :type inswitch: int
+    :param dstswitch: the destination switch.
+    :type dstswitch: int
     :param inport: the port on the dest switch we receive the packet from.
     :type inport: int
     """
-    def __init__(self, outswitch, outport, inswitch, inport):
-        self.outswitch = outswitch
+    def __init__(self, srcswitch, outport, dstswitch, inport):
+        self.srcswitch = srcswitch
         self.outport = outport
-        self.inswitch = inswitch
+        self.dstswitch = dstswitch
         self.inport = inport
-        super(link, self).__init__(match(switch = self.outswitch, outport = self.outport)
-            >> modify(switch = self.inswitch, inport = self.inport, outport = None))
+        super(link, self).__init__(match(switch = self.srcswitch, outport = self.outport)
+            >> modify(switch = self.dstswitch, inport = self.inport))
 
     def __repr__(self):
-        return "link from %s:%s to %s:%s" % (self.outswitch, self.outport,
-                                             self.inswitch, self.inport)
+        return "Link from %s:%s to %s:%s" % (self.srcswitch, self.outport,
+                                             self.dstswitch, self.inport)
+
+class backlink(DerivedPolicy):
+    """
+    Topology traceback link from a dest switch and inport to a source switch and inport.
+    Also sets up the whole range of possible inports for the source switch.
+
+    :param srcswitch: the source switch.
+    :type srcswitch: int
+    :param outport: the port on the source switch we forward out.
+    :type outport: int
+    :param dstswitch: the destination switch.
+    :type dstswitch: int
+    :param inport: the port on the dest switch we receive the packet from.
+    :type inport: int
+    :param topo: the topology object (NOT a policy!)
+    :type topo: topo
+    """
+    def __init__(self, s1, s2, adj):
+        self.s1 = s1
+        self.outport = adj[s2][s1]
+        self.s2 = s2
+        self.inport = adj[s2][s2]
+        infloodportmods = [modify(inport = adj[sw][s1]) for sw in adj]
+        backpol = match(switch = self.s2, inport = self.inport) >> modify(switch = self.s1, outport = self.outport)
+        inflood = parallel(infloodportmods)
+        if inflood is drop:
+            super(backlink, self).__init__(backpol >> modify(inport = None))
+        else:
+            super(backlink, self).__init__(backpol >> inflood)
+
+    def __repr__(self):
+        return "Link backwards from %s:%s to %s:%s" % (self.s2, self.inport,
+                                                       self.s1, self.outport)
 
 ################################################################################
 # Dynamic Policies                                                             #
@@ -1627,7 +1660,21 @@ def simplify_tb(policy):
                 del policies[i:i+2]
                 policies.insert(i, simplified)
                 i = 0
-        return sequential(policies)
+
+        # Get rid of summods that are just unset outports.
+        #
+        # This is a bit hackish - works except when the original policy uses matches, etc.
+        # on the outport field after explicitly setting it.
+        cleaned_policies = []
+        for p in policies:
+            if (isinstance(p, sum_modify)
+                and len(p.fields) is 1
+                and 'outport' in p.fields
+                and p.fields['outport'] is identity):
+                    continue
+            cleaned_policies.append(p)
+
+        return sequential(cleaned_policies)
 
     elif isinstance(policy, parallel):
         # Simplify each term, ignoring all identities.
@@ -1639,7 +1686,11 @@ def simplify_tb(policy):
     elif isinstance(policy, negate):
         return policy #TODO
 
-      # Apply back policy algorithm to the underlying policy of Derived policies
+    # No need to simplify links or traceback links, these can stand alone
+    elif isinstance(policy, link) or isinstance(policy, backlink):
+        return policy
+
+    # Apply back policy algorithm to the underlying policy of Derived policies
     elif isinstance(policy, DerivedPolicy):
         return simplify_tb(policy.policy)
 
@@ -1724,6 +1775,7 @@ def sum_to_modify(sm):
     mod = None
     for key in sm.fields.copy():
         policy = sm.fields[key]
+
         if policy is identity:
             continue
         # Simplify if match

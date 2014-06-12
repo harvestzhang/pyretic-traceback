@@ -4,13 +4,18 @@ class Two_Ingress(Topo):
 
   # TOPOLOGY:
   #
-  #    s4----h4
+  #    s4[2]---h4
+  #    [1]
   #     |
-  #    s3----h3
-  #   /  \
-  #  s1   s2 (gateways)
-  #  |     |
-  #  ex1   ex2 (external hosts)
+  #    [3]
+  #    s3[4]---h3
+  #   [1] [2]
+  #   /     \
+  # [1]     [1]
+  #  s1     s2 (gateways)
+  # [2]     [2]
+  #  |       |
+  # h1       h2 (external hosts)
 
   def __init__(self):
     Topo.__init__(self)
@@ -27,16 +32,14 @@ class Two_Ingress(Topo):
     self.addLink(s[3], s[4])
 
     # Create and hook up hosts.
+    host = self.addHost('h1')
+    self.addLink(host, s[1])
+    host = self.addHost('h2')
+    self.addLink(host, s[2])
     host = self.addHost('h3')
     self.addLink(host, s[3])
     host = self.addHost('h4')
     self.addLink(host, s[4])
-    
-    # Create and hook up external hosts.
-    exthost = self.addHost('ex1')
-    self.addLink(exthost, s[1])
-    exthost = self.addHost('ex2')
-    self.addLink(exthost, s[2])
 
 class Four_Ingress(Topo):
 
@@ -47,8 +50,8 @@ class Four_Ingress(Topo):
   #  s5 ----- s6 ------ s7 --------- s8
   #   |        |         |            
   #  s1 ----- s2        s3 --------- s4
-  #   |       |       /    \       /   \
-  # ex1     ex2     ex3    ex4   ex5   ex6
+  #   |        |      /    \       /   \
+  #  h1       h2     h3    h4     h5   h6
   #
 
   def __init__(self):
@@ -75,18 +78,18 @@ class Four_Ingress(Topo):
       host = self.addHost('h{}'.format(i))
       self.addLink(host, s[i - 2])
 
-    # Create and hook up external hosts.
-    host = self.addHost('ex1')
+    # Create and hook up the other hosts.
+    host = self.addHost('h1')
     self.addLink(host, s[1])
-    host = self.addHost('ex2')
+    host = self.addHost('h2')
     self.addLink(host, s[2])
-    host = self.addHost('ex3')
+    host = self.addHost('h3')
     self.addLink(host, s[3])
-    host = self.addHost('ex4')
+    host = self.addHost('h4')
     self.addLink(host, s[3])
-    host = self.addHost('ex5')
+    host = self.addHost('h5')
     self.addLink(host, s[4])
-    host = self.addHost('ex6')
+    host = self.addHost('h6')
     self.addLink(host, s[4])
 
 class Two_Switch(Topo):

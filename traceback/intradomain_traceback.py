@@ -110,5 +110,53 @@ class AbstractPacket:
 #
 # ------------------------------------------------------------------------------
 def policy_inversion(policy, topo, packet):
-  overall_policy = policy >> topo_policy(topo)
-  test_back_policy(overall_policy)
+
+  tb_switch = packet.header['switch']
+  tb_policy = traceback_policy(policy, topo)
+  ingresses = {1:MAC('00:00:00:00:00:01'), 2:MAC('00:00:00:00:00:02')}
+  #ingresses = [(loc.switch, loc.port_no) for loc in list(topo.egress_locations())]
+
+  fwd_pkts = []
+  pkts = [packet]
+  print 'Starting at switch', tb_switch, 'at port', packet.header['inport']
+  
+  while len(pkts) > 0:
+    print '< < < < < < < <'
+    
+    back_pkts = []
+    for pkt in pkts:
+      back_pkts += (list(tb_policy.dry_eval(pkt)))
+    
+    pkts = []
+    for pkt in back_pkts:
+      
+      # Update packet list for next round
+      if 'inport' in pkt.header:
+        print 'Switch', pkt.header['switch'], 'with in port', pkt.header['inport']
+      else:
+        print 'Switch', pkt.header['switch'], 'at beginning.'
+      pkts.append(pkt)
+
+      # See if any hosts at this switch could've sent the packet
+      switch = pkt.header['switch']
+      if switch in ingresses and pkt.header['srcmac'] == ingresses[switch]:
+        fwd_pkts.append(pkt)
+
+  fwd_policy = policy >> topo_policy(topo)
+  for fwd_pkt in fwd_pkts:
+    print
+    print '*** Possible path: ***'
+    while pkt.header['switch'] is not tb_switch:
+      print
+      print '>>>'
+      print
+      print fwd_pkt
+      out_pkts = fwd_policy.dry_eval(fwd_pkt)
+      if len(out_pkts) == 1:
+        fwd_pkt = out_pkts.pop()
+      else:
+        break
+    print '**********************'
+    print
+
+  

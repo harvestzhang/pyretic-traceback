@@ -64,7 +64,7 @@ class flag(DynamicPolicy):
     self.hostmac = None
     
     # Dummy for testing
-    # m_flagged_switch = ~match(in_switch = None) & match(switch = 7, dstmac = MAC('00:00:00:00:00:09'))
+    # m_flagged_switch = match(switch = 4, dstmac = MAC('00:00:00:00:00:04'))
     # q_flagged_packets = packets(limit = 1, group_by = ['srcip'])
     # q_flagged_packets.register_callback(trace_packet)
     # self.policy = m_flagged_switch >> q_flagged_packets
